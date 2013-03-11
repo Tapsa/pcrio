@@ -1,6 +1,6 @@
 /*
     Copyright (c) 2012, Armin Preiml
-    
+
     All rights reserved.
 
     Redistribution and use in source and binary forms, with or without
@@ -38,10 +38,17 @@
 #define PCRIO_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include "pcrdef.h"
 
-enum pcr_error {
+#define PCR_SUCCESS(x) (x == PCR_ERROR_NONE)
+#define PCR_FAILURE(x) (x != PCR_ERROR_NONE)
+
+#define PCR_RET_ERR_LANG_NOT_SET -2
+
+enum pcr_error
+{
   PCR_ERROR_NONE = 0,
   PCR_ERROR_BAD_ALLOC = 1,
   PCR_ERROR_READ = 2,
@@ -53,60 +60,90 @@ enum pcr_error {
 
 typedef enum pcr_error pcr_error_code;
 
-typedef struct pcr_string_ {
-  
-  char *value;
-  uint32_t size;
-  uint32_t codepage;  
-  
-} pcr_string;
-
-#define PCR_SUCCESS(x) (x == PCR_ERROR_NONE)
-#define PCR_FAILURE(x) (x != PCR_ERROR_NONE)
-
-// typedef struct pcr_file PCR_FILE;
-
 /**
- * Get a string describing the error. 
+ * Get a string describing the error.
  */
 extern const char* pcr_error_message(pcr_error_code err);
 
-extern struct pcr_file *pcr_read_file(const char *filename, pcr_error_code *err);
-extern void pcr_write_file(const char *filename, struct pcr_file *pfile, pcr_error_code *err);
+extern Pcr_file *pcr_read_file(const char *filename, pcr_error_code *err);
+extern void pcr_write_file(const char *filename, Pcr_file *pfile, pcr_error_code *err);
 
-extern void pcr_free(struct pcr_file *pfile);
-extern void pcr_free_string_value(pcr_string string); 
-
-/**
- * 
- */
-extern const struct culture_info_array* pcr_get_culture_info(struct pcr_file *pfile);
+extern void pcr_free(Pcr_file *pfile);
 
 /**
- * 
- * @param culture_id if -1 take the culture with lowest id //TODO is this necessary?
- * 
- * @return copy of string or if not found: pcr_string with value = NULL
+ * TODO better name
  */
-extern pcr_string pcr_get_string(const struct pcr_file *pfile, uint32_t id, int32_t culture_id);
+extern const Language_info_array* pcr_get_language_info(const Pcr_file *pfile);
 
 /**
- * The string needs to be encoded. Creates a new name and/or language node if
- * one/both of them is/are missing.
+ * Get the default language. If there is only one language available on read, it will
+ * be set as default. If not the language needs to be set using pcr_set_default_language.
+ *
+ * @param pfile
+ * @return ptr to language class or NULL if none is set
  */
-extern pcr_error_code pcr_set_string(struct pcr_file *pfile, uint32_t id, uint32_t culture_id, const pcr_string str);
+extern const Pcr_language * pcr_get_default_language(const Pcr_file *pfile);
 
-// TODO new string api
+/**
+ */
+// extern void pcr_set_default_language(Pcr_file* pf, uint32_t language_id);
+/**
+ */
+// extern void pcr_set_default_languageL(Pcr_file *pf, Pcr_language lang);
 
-extern const struct culture_info * pcr_get_default_culture(const struct pcr_file *pfile);
-extern void pcr_set_default_culture(struct pcr_file *pf, struct culture_info cult_inf);
-  
-extern uint32_t pcr_get_string_size (struct pcr_file *pf, uint32_t id);
-extern uint32_t pcr_get_string_sizeC (struct pcr_file *pf, uint32_t id, uint32_t culture_id);
-    
-/// return number of characters read
-// extern uint32_t pcr_get_string (const struct pcr_file *pf, uint32_t id, char *buff, uint32_t buff_size);  // set default culture
-extern uint32_t pcr_get_stringC (const struct pcr_file *pf, uint32_t id, uint32_t culture_id, char *buff, uint32_t buff_size);
+/**
+ * See pcr_get_codepageL.
+ *
+ * @return (uint32_t)-2 if default language not set (PCR_RET_ERR_LANG_NOT_SET)
+ */
+extern uint32_t pcr_get_codepage(const Pcr_file *pf, uint32_t string_id);
 
+/**
+ * @return codepage if string, language dir or language is sane in lang_info_array.
+ *         (uint32_t)-1 if not set.
+ */
+extern uint32_t pcr_get_codepageL(const Pcr_file *pf, uint32_t string_id, uint32_t language_id);
+
+/**
+ * Returns the string length.
+ *
+ * @return Number of characters (without ending \0) or 0 if not found.
+ *         -2 if language id not set (PCR_RET_ERR_LANG_NOT_SET)
+ */
+extern int32_t pcr_get_strlen(const Pcr_file *pf, uint32_t id);
+
+/**
+ * Method for getting the length of a string with language id as additional parameter.
+ *
+ * @return Length of string (without ending \0) or 0 if not found.
+ */
+extern uint16_t pcr_get_strlenL(const Pcr_file *pf, uint32_t id, uint32_t language_id);
+
+/**
+ * Copies n bytes of string with given id to dest. Is n > strlen, remaining bytes
+ * will be \0 padded. Warning: If there is no null byte among the first n bytes
+ * of src, the string placed in dest will not be null-terminated.
+ *
+ * @param n bytes to copy:
+ *
+ * @return >= 0 if successfull. 1 if codepage differs from default language (pcr_get_codepage).
+ *         -2 if default language is not set (PCR_RET_ERR_LANG_NOT_SET)
+ */
+extern int pcr_get_string(const Pcr_file *pf, uint32_t id, char *dest, size_t n);
+
+/**
+ * See pcr_get_string. This function has the language_id as additional parameter.
+ *
+ * @return >= 0 if successfull. 1 if codepage is not unique for language (pcr_get_codepage).
+ */
+extern int pcr_get_stringL(const Pcr_file *pf, uint32_t id, uint32_t language_id, char *dest, size_t n);
+
+/**
+ * @return 0 on success.
+ *         -1 if string can't be stored using lang.codepage (there is already a resource
+ *         directory using a different codepage for language with given lang.id).
+ *         >0 see pcr_error_code (Possible: BAD_ALLOC, UNSUPPORTED)
+ */
+extern int pcr_set_stringC(Pcr_file *pf, uint32_t id, Pcr_language lang, const char *src);
 
 #endif // PCRIO_H
