@@ -53,6 +53,13 @@
 #define IMAGE_SCN_CNT_INITIALIZED_DATA       0x00000040  // Section contains initialized data.
 
 
+/*
+ * Macros
+ */
+// Calc the id of the strings root node on name level.
+#define RSRC_STRING_NAME_DIR_ID(string_id) (string_id/MAX_STRINGS_PER_LEAF + 1);
+#define RSRC_STRING_DATA_OFFSET(string_id) string_id % MAX_STRINGS_PER_LEAF
+
 enum rsrc_node_identifier {
   TREE_NODE_IDENTIFIER_ID = 0,
   TREE_NODE_IDENTIFIER_NAME = 1
@@ -82,6 +89,7 @@ struct rsrc_section_size {
 
 void * pcr_malloc(size_t size, enum pcr_error *err);
 void * pcr_realloc(void *ptr, size_t size, enum pcr_error *err);
+// void * pcr_reallocF(void *ptr, size_t size, enum pcr_error *err);
 
 void pcr_fread(void *ptr, size_t size, size_t nmemb, FILE *stream, enum pcr_error *err);
 void pcr_fwrite(const void*ptr, size_t size, size_t nmemb, FILE *stream, enum pcr_error *err);
@@ -96,7 +104,8 @@ uint32_t pcr_align(uint32_t number, uint32_t align);
 
 int pcr_comp_image_secion_headers (const void *a, const void *b);
 int pcr_comp_id_tree_nodes (const void *a, const void *b);
-int pcr_comp_culture_info (const void *a, const void *b);
+int pcr_comp_language_info (const void *a, const void *b);
+int pcr_comp_language_info_without_cp (const void *a, const void *b);
 
 /*
  * read functions
@@ -108,11 +117,11 @@ void pcr_read_section_data(struct pcr_file *pfile, FILE *file, pcr_error_code *e
 void pcr_read_rsrc_section(struct pcr_file *pcr_file, FILE *file, pcr_error_code *err);
  
 struct resource_tree_node *pcr_read_rsrc_tree(FILE *file, enum pcr_error *err, 
-      long section_offset, long raw_data_offset, int level, enum resource_type type, struct culture_info_array *cult_info_arr);
+      long section_offset, long raw_data_offset, int level, enum resource_type type, struct language_info_array *cult_info_arr);
 
 struct resource_tree_node * pcr_read_sub_tree(FILE *file, enum pcr_error *err, long section_offset, long raw_data_offset,
                   struct resource_directory_entry *directory_entry, 
-                  enum rsrc_node_identifier identified_by, int level, enum resource_type type, struct culture_info_array *cult_info_arr);              
+                  enum rsrc_node_identifier identified_by, int level, enum resource_type type, struct language_info_array *cult_info_arr);              
 
 struct resource_directory_entry * pcr_read_rsrc_directory_entries(FILE *file, int count, 
                                     enum pcr_error *err);
@@ -160,7 +169,8 @@ void pcr_write_rsrc_data(struct resource_data *str, FILE *stream, enum pcr_error
  * initialization functions
  */
 
-void pcr_init_directory_table(struct resource_directory_table *table_ptr);
+struct resource_tree_node * pcr_create_rsrc_tree_node(pcr_error_code *err);
+struct resource_data *pcr_create_rsrc_data(struct pcr_language lang, pcr_error_code *err);
 
 /*
  * free
@@ -173,9 +183,15 @@ void pcr_free_resource_data(struct resource_data *resource_data);
  * access functions
  */
 
-void pcr_update_culture_info(struct culture_info_array *cinfo_array, uint32_t culture_id, uint32_t codepage, pcr_error_code *err);
+void pcr_add_rsrc_node(struct resource_tree_node *root, struct resource_tree_node *child, pcr_error_code *err);
+void pcr_update_language_info(struct language_info_array *lang_info_array, uint32_t language_id, uint32_t codepage, pcr_error_code *err);
+unsigned int pcr_get_language_count(const struct pcr_file *pf, uint32_t language_id);
+// only works if language count == 1, else (or if not found) NULL
+const struct pcr_language * pcr_get_language(const struct pcr_file *pf, uint32_t language_id); 
 struct image_section_header * pcr_get_section_header(struct pcr_file *pfile, const char *name);
 struct resource_tree_node* pcr_get_sub_id_node(const struct resource_tree_node *node, uint32_t id);
+
+struct rsrc_string_ptr pcr_get_string_ptr (const struct pcr_file *pf, uint32_t id, uint32_t language_id);
 
 /*
  * misc utils
@@ -237,6 +253,30 @@ void * pcr_realloc(void *ptr, size_t size, enum pcr_error *err)
 
   return new_alloc;
 }
+
+/**
+ * *ptr WILL be freed on error, but will NOT be set to NULL TODO
+ */
+/*
+void * pcr_reallocF(void *ptr, size_t size, enum pcr_error *err)
+{
+  void *new_alloc = NULL;
+  
+  if (*err != PCR_ERROR_NONE)
+    return NULL;
+  
+  new_alloc = realloc(ptr, size);
+  
+  if (new_alloc == NULL)
+  {
+    free(ptr);
+    
+    *err = PCR_ERROR_BAD_ALLOC;
+  }
+  
+  return new_alloc;
+}
+*/
   
 /**
  * fread with enum pcr_error checking
@@ -318,18 +358,23 @@ int pcr_comp_name_tree_nodes (const void *a, const void *b)
                 (*(struct resource_tree_node **)b)->name); 
 }
 
-int pcr_comp_culture_info (const void *a, const void *b)
+int pcr_comp_language_info (const void *a, const void *b)
 {
-  int id_diff = ((struct culture_info *)a)->id -
-                ((struct culture_info *)b)->id; 
+  int id_diff = ((struct language_info *)a)->lang.id -
+                ((struct language_info *)b)->lang.id; 
   
   if (id_diff == 0)
-    return ((struct culture_info *)a)->codepage -
-           ((struct culture_info *)b)->codepage; 
+    return ((struct language_info *)a)->lang.codepage -
+           ((struct language_info *)b)->lang.codepage; 
   else
     return id_diff;
 }
 
+int pcr_comp_language_info_without_cp (const void *a, const void *b)
+{
+  return ((struct language_info *)a)->lang.id -
+         ((struct language_info *)b)->lang.id; 
+}
 /*
  * read functions
  */
@@ -488,26 +533,27 @@ void pcr_read_rsrc_section(struct pcr_file *pfile, FILE *file, pcr_error_code *e
     
   if (rsrc_header != NULL)
   {
-    struct culture_info_array *cinfo = NULL;
+    struct language_info_array *lang_info = NULL;
 
     pfile->rsrc_section_data = (struct resource_section_data *)pcr_malloc(sizeof(struct resource_section_data), err);
+    pfile->rsrc_section_data->rsrc_string_cache.sptr = NULL;
     
-    cinfo = &pfile->rsrc_section_data->culture_info;
+    lang_info = &pfile->rsrc_section_data->language_info;
 
-    cinfo->array = NULL;
-    cinfo->count = 0;
-    pfile->rsrc_section_data->default_culture = NULL;
+    lang_info->array = NULL;
+    lang_info->count = 0;
+    pfile->rsrc_section_data->default_language = NULL;
   
     long raw_data_offset = (long)rsrc_header->pointer_to_raw_data - rsrc_header->virtual_adress;
       
     pfile->rsrc_section_data->root_node = 
-      pcr_read_rsrc_tree(file, err, ftell(file), raw_data_offset, 0, RESOURCE_TYPE_UNKNOWN, cinfo); 
+      pcr_read_rsrc_tree(file, err, ftell(file), raw_data_offset, 0, RESOURCE_TYPE_UNKNOWN, lang_info); 
 
-    if (cinfo->count == 1)
+    if (lang_info->count == 1)
     {
-      printf("Setting default culture to %d\n", cinfo->array[0].id);
+      printf("Setting default culture to %d\n", lang_info->array[0].lang.id);
 
-      pfile->rsrc_section_data->default_culture = &cinfo->array[0];
+      pfile->rsrc_section_data->default_language = &lang_info->array[0].lang;
     }
 
   }
@@ -517,25 +563,20 @@ void pcr_read_rsrc_section(struct pcr_file *pfile, FILE *file, pcr_error_code *e
  * reas a directory table and recoursivly reads its children
  */
 struct resource_tree_node * pcr_read_rsrc_tree(FILE *file, pcr_error_code *err_code, 
-                       long section_offset, long raw_data_offset, int level, enum resource_type type, struct culture_info_array *cult_info_arr)
+                       long section_offset, long raw_data_offset, int level, enum resource_type type, struct language_info_array *cult_info_arr)
 {
   if (*err_code != PCR_ERROR_NONE)
     return NULL;
   
   struct resource_tree_node *node = NULL;  
 
-  node = (struct resource_tree_node *)pcr_malloc(sizeof(struct resource_tree_node), err_code);
+  node = pcr_create_rsrc_tree_node(err_code);
  
   if (node != NULL)
   {
     uint16_t num_id_entries, num_name_entries;
     struct resource_directory_entry *name_entries, *id_entries;
     
-    node->name = NULL;
-    node->id_entries = NULL;
-    node->name_entries = NULL;
-    node->resource_data = NULL;
-  
     pcr_fread(&node->directory_table, sizeof(struct resource_directory_table), 1, file, err_code);
 
     num_id_entries = node->directory_table.number_of_id_entries;
@@ -581,7 +622,7 @@ struct resource_tree_node * pcr_read_rsrc_tree(FILE *file, pcr_error_code *err_c
 struct resource_tree_node * 
 pcr_read_sub_tree(FILE *file, enum pcr_error *err_code, long section_offset, long raw_data_offset,
                   struct resource_directory_entry *directory_entry, 
-                  enum rsrc_node_identifier identified_by, int level, enum resource_type type, struct culture_info_array *cult_info_arr)
+                  enum rsrc_node_identifier identified_by, int level, enum resource_type type, struct language_info_array *cult_info_arr)
 {
   if (*err_code != PCR_ERROR_NONE)
     return NULL;
@@ -627,21 +668,13 @@ pcr_read_sub_tree(FILE *file, enum pcr_error *err_code, long section_offset, lon
     {
       data->data_entry = data_entry;
       
-      pcr_update_culture_info(cult_info_arr, directory_entry->id, data_entry.codepage, err_code);
+      pcr_update_language_info(cult_info_arr, directory_entry->id, data_entry.codepage, err_code);
     }
     
-    subtree = (struct resource_tree_node *)pcr_malloc(sizeof(struct resource_tree_node), err_code);
+    subtree = pcr_create_rsrc_tree_node(err_code); 
 
-    if (subtree != NULL)
-    {    
-      pcr_init_directory_table(&subtree->directory_table);
-      
-      subtree->id_entries = NULL;
-      subtree->name_entries = NULL;
-      subtree->name = NULL;
-    
+    if (subtree)
       subtree->resource_data = data;
-    }
   }
     
   // node identification:
@@ -1042,7 +1075,7 @@ void pcr_write_section_data(struct pcr_file *pcr_file, FILE *stream,
     pcr_zero_pad(stream, sec->pointer_to_raw_data, err_code);
     
     // TODO Debug only!
-    if (sec->pointer_to_raw_data != ftell(stream))
+    if ((long int)sec->pointer_to_raw_data != ftell(stream))
       printf("Error: Section pointer differs from stream pos!\n");
     
     if (strcmp(SECTION_NAME_RESOURCE, sec->name) == 0)
@@ -1223,14 +1256,89 @@ void pcr_write_string(char *str, FILE *stream, enum pcr_error *err_code)
  * initialization functions
  */
 
-void pcr_init_directory_table(struct resource_directory_table *table_ptr)
+/**
+ * 
+ */
+struct resource_tree_node * pcr_create_rsrc_tree_node(pcr_error_code *err)
 {
-  table_ptr->number_of_id_entries = 0;
-  table_ptr->number_of_name_entries = 0;
-  table_ptr->characteristics = 0;
-  table_ptr->major_version = 0;
-  table_ptr->minor_version = 0;
-  table_ptr->time_stamp = 0;
+  struct resource_tree_node *node;
+  size_t node_size = sizeof(struct resource_tree_node);
+  
+  node = (struct resource_tree_node *)pcr_malloc(node_size, err);
+  
+  memset(node, 0, node_size);
+  
+  return node;
+}
+
+struct resource_data *pcr_create_rsrc_data(struct pcr_language lang, pcr_error_code *err)
+{
+  int i, j;
+  struct resource_data *resource_data;
+  
+  resource_data = (struct resource_data *)pcr_malloc(sizeof(struct resource_data), err);
+  
+  if (*err != PCR_ERROR_NONE)
+    return NULL;
+  
+  memset(resource_data, 0, sizeof(struct resource_data));
+  
+  resource_data->type = RESOURCE_TYPE_STRINGS;
+  
+  resource_data->data_entry.codepage = lang.codepage;
+  resource_data->data_entry.size = MAX_STRINGS_PER_LEAF * 2; 
+
+  // create empty strings until offset is reached
+  resource_data->strings = (char **)pcr_malloc(sizeof(char *) * MAX_STRINGS_PER_LEAF, err);
+  
+  if (*err != PCR_ERROR_NONE)
+  {
+    free(resource_data);
+    return NULL;
+  }
+  
+  for (i=0; i<MAX_STRINGS_PER_LEAF; i++)
+  {
+    resource_data->strings[i] = (char *)pcr_malloc(sizeof(char), err);
+    
+    if (*err != PCR_ERROR_NONE)
+      break;
+    
+    resource_data->strings[i][0] = '\0';
+  }
+  
+  if (*err != PCR_ERROR_NONE)
+  {
+    for (j=0; j<i; j++)
+      free(resource_data->strings[j]);
+    free(resource_data->strings);
+    free(resource_data);
+    return NULL;
+  }
+  
+  resource_data->number_of_strings = MAX_STRINGS_PER_LEAF;
+  
+  return resource_data;
+}
+
+/**
+ * 
+ */
+struct resource_tree_node *pcr_create_rsrc_id_node_at(struct resource_tree_node *root, 
+                                                      uint32_t id, pcr_error_code *err) 
+{
+  struct resource_tree_node *node;
+  
+  node = pcr_create_rsrc_tree_node(err);
+  
+  if (*err != PCR_ERROR_NONE)
+    return NULL;
+  
+  node->id = id;
+  
+  pcr_add_rsrc_node(root, node, err);
+  
+  return node;
 }
 
 /*
@@ -1257,7 +1365,7 @@ void pcr_free(struct pcr_file* pcr_file)
     
     if (pcr_file->rsrc_section_data)
     {
-      free(pcr_file->rsrc_section_data->culture_info.array);
+      free(pcr_file->rsrc_section_data->language_info.array);
       pcr_free_resource_tree_node(pcr_file->rsrc_section_data->root_node);
       free(pcr_file->rsrc_section_data);
     }
@@ -1265,13 +1373,6 @@ void pcr_free(struct pcr_file* pcr_file)
   
   free(pcr_file);
     
-}
-
-extern void pcr_free_string_value(pcr_string string)
-{
-  free(string.value);
-  string.value = NULL;
-  string.size = 0;
 }
 
 /**
@@ -1323,16 +1424,16 @@ void pcr_free_resource_data(struct resource_data *resource_data)
  * access functions
  */
 
-void pcr_update_culture_info(struct culture_info_array *cinfo_array, uint32_t culture_id, uint32_t codepage, pcr_error_code *err)
+void pcr_update_language_info(struct language_info_array *lang_info_array, uint32_t language_id, uint32_t codepage, pcr_error_code *err)
 {
-  struct culture_info key, *ptr = NULL;
+  struct language_info key, *ptr = NULL;
   
-  key.id = culture_id;
-  key.codepage = codepage;
-  key.item_count = 0;
+  key.lang.id = language_id;
+  key.lang.codepage = codepage;
+  key.item_count = 1;
   
-  ptr = (struct culture_info*)bsearch(&key, cinfo_array->array, cinfo_array->count, 
-                                      sizeof(struct culture_info), pcr_comp_culture_info);
+  ptr = (struct language_info*)bsearch(&key, lang_info_array->array, lang_info_array->count, 
+                                      sizeof(struct language_info), pcr_comp_language_info);
   
   if (ptr)
   {
@@ -1340,14 +1441,46 @@ void pcr_update_culture_info(struct culture_info_array *cinfo_array, uint32_t cu
   }
   else
   {
-    cinfo_array->array = (struct culture_info *)pcr_realloc(cinfo_array->array, sizeof(struct culture_info), err);
+    lang_info_array->array = (struct language_info *)pcr_realloc(lang_info_array->array, sizeof(struct language_info), err);
     
-    cinfo_array->array[cinfo_array->count] = key;
-    cinfo_array->count ++;
+    lang_info_array->array[lang_info_array->count] = key;
+    lang_info_array->count ++;
     
-    qsort(cinfo_array->array, cinfo_array->count, sizeof(struct culture_info), pcr_comp_culture_info);
+    qsort(lang_info_array->array, lang_info_array->count, sizeof(struct language_info), pcr_comp_language_info);
   }
     
+}
+
+/**
+ * Count a language with id in the language_info_array.
+ */
+unsigned int pcr_get_language_count(const struct pcr_file *pf, uint32_t language_id)
+{
+  const struct language_info_array *linfo = pcr_get_language_info(pf);
+  unsigned int i, lang_cnt = 0;
+  
+  for (i=0; i < linfo->count; i++)
+      if (language_id == linfo->array[i].lang.id)
+        lang_cnt ++;
+      
+  return lang_cnt;
+}
+
+/**
+ * @return NULL if not found or language_count > 1
+ */
+const struct pcr_language * pcr_get_language(const struct pcr_file *pf, uint32_t language_id)
+{
+  struct language_info key, *ptr = NULL;
+  const struct language_info_array *lang_info_array = pcr_get_language_info(pf);
+  key.lang.id = language_id;
+  
+  if (pcr_get_language_count(pf, language_id) != 1)
+    return NULL;
+  
+  ptr = (struct language_info*)bsearch(&key, lang_info_array->array, lang_info_array->count,
+                                       sizeof(struct language_info), pcr_comp_language_info_without_cp);
+  return (ptr) ? &ptr->lang : NULL;
 }
 
 /**
@@ -1434,15 +1567,15 @@ struct resource_tree_node *pcr_get_rsrc_string_node_by_id(const struct pcr_file 
 /**
  * TODO error handling
  */
-void pcr_add_rsrc_node(struct resource_tree_node *root, struct resource_tree_node *child)
+void pcr_add_rsrc_node(struct resource_tree_node *root, struct resource_tree_node *child, pcr_error_code *err)
 {
-  pcr_error_code err = PCR_ERROR_NONE;
   uint16_t num_id_entries;
+  
+  if (*err != PCR_ERROR_NONE)
+    return;
   
   if (child->name == NULL)
   {
-    printf("Add id node: %d\n", child->id);
-    
     if (pcr_get_sub_id_node(root, child->id) != NULL)
       printf("Error: There is already a node with given id!\n");
     else
@@ -1450,20 +1583,13 @@ void pcr_add_rsrc_node(struct resource_tree_node *root, struct resource_tree_nod
       num_id_entries = root->directory_table.number_of_id_entries;
       num_id_entries ++;
       
-      if (root->id_entries == NULL)
-        printf("Root id null\n");
-      
       struct resource_tree_node **id_entries_new = (struct resource_tree_node **)
-        pcr_realloc(root->id_entries, num_id_entries * sizeof(struct resource_tree_node *), &err);
+        pcr_realloc(root->id_entries, num_id_entries * sizeof(struct resource_tree_node *), err);
         
-      if (id_entries_new == NULL)
-        printf("Error: Realloc (pcr_add_rsrc_node)\n");
-      else
+      if (*err == PCR_ERROR_NONE)
       {
         root->id_entries = id_entries_new;
         root->directory_table.number_of_id_entries = num_id_entries;
-        
-        printf("NUm id entries (root) %d\n", num_id_entries);
         
         root->id_entries[num_id_entries - 1] = child;
         
@@ -1480,229 +1606,297 @@ void pcr_add_rsrc_node(struct resource_tree_node *root, struct resource_tree_nod
 }
 
 /**
- *
- */
-const struct culture_info *pcr_get_default_culture(const struct pcr_file *pfile)
-{
-  return pfile->rsrc_section_data->default_culture;
-}
-
-/**
  * 
  */
-const struct culture_info_array* pcr_get_culture_info(struct pcr_file *pfile)
+const struct language_info_array* pcr_get_language_info(const struct pcr_file *pfile)
 {
   if (pfile && pfile->rsrc_section_data)
-    return &pfile->rsrc_section_data->culture_info;
+    return &pfile->rsrc_section_data->language_info;
   else
     return NULL;
 }
 
-//TODO macro?
-uint32_t pcr_get_rsrc_string_name_node(uint32_t string_id)
+/**
+ *
+ */
+const struct pcr_language *pcr_get_default_language(const struct pcr_file *pfile)
 {
-  return string_id/MAX_STRINGS_PER_LEAF + 1;
+  return pfile->rsrc_section_data->default_language;
 }
 
-//TODO
-uint32_t pcr_get_rsrc_data_string_index(uint32_t string_id)
+/**
+ *
+ */
+void pcr_set_default_language(struct pcr_file* pf, uint32_t language_id)
 {
+  //TODO implement
+}
+
+/**
+ *
+ */
+void pcr_set_default_languageL(struct pcr_file *pf, struct pcr_language lang)
+{
+  //TODO implement
+}
+
+/**
+ *
+ */
+extern uint32_t pcr_get_codepage(const struct pcr_file *pf, uint32_t string_id)
+{
+  const struct pcr_language *lang = pcr_get_default_language(pf);
   
-  return 0;
+  if (!lang)
+    return (uint32_t)PCR_RET_ERR_LANG_NOT_SET;
+  else
+    return pcr_get_codepageL(pf, string_id, lang->id);
+}
+
+/**
+ *
+ */
+uint32_t pcr_get_codepageL(const struct pcr_file *pf, uint32_t string_id, uint32_t language_id)
+{
+  struct rsrc_string_ptr rsptr = pcr_get_string_ptr(pf, string_id, language_id);
+  
+  if (rsptr.codepage != (uint32_t)-1) // Codepage set (string or lang dir found)
+    return rsptr.codepage;
+  
+  if (pcr_get_language_count(pf, language_id) > 1) // language not unique
+    return -1;
+  
+  // get language from info array
+  const struct pcr_language *langptr = pcr_get_language(pf, language_id);
+  
+  return (langptr) ? langptr->codepage : (uint32_t)PCR_RET_ERR_LANG_NOT_SET;
+}
+
+/**
+ *
+ */
+int32_t pcr_get_strlen (const struct pcr_file *pf, uint32_t id)
+{
+  const struct pcr_language *lang_info = pcr_get_default_language(pf);
+  
+  if (lang_info == NULL)
+    return PCR_RET_ERR_LANG_NOT_SET;
+  else
+    return pcr_get_strlenL(pf, id, lang_info->id);
+}
+
+/**
+ *
+ */
+uint16_t pcr_get_strlenL (const struct pcr_file *pf, uint32_t id, uint32_t language_id)
+{
+  struct rsrc_string_ptr rsptr = pcr_get_string_ptr(pf, id, language_id);
+  
+  if (rsptr.sptr == NULL)
+    return 0;
+  else
+    return strlen(*rsptr.sptr);
+}
+
+/**
+ * Get a pointer to a resource string. Also puts string pointer into cache.
+ * 
+ * @returns string or .sptr = NULL if not found.
+ *          codepage = -1 if not set. Codepage will be set, if lang_dir is found.
+ */
+struct rsrc_string_ptr pcr_get_string_ptr (const struct pcr_file *pf, uint32_t id, uint32_t language_id)
+{
+  uint32_t resource_directory_id, offset;
+  struct resource_tree_node *name_dir = NULL, *lang_dir = NULL;
+  struct rsrc_string_ptr rsptr, *cached_rsptr;
+  
+  cached_rsptr = &pf->rsrc_section_data->rsrc_string_cache;
+  
+  if (cached_rsptr->id == id && cached_rsptr->language_id == language_id)
+  {
+    rsptr = *cached_rsptr;
+  }
+  else
+  {
+    rsptr.sptr = NULL;
+    rsptr.id = id;
+    rsptr.language_id = language_id;
+    rsptr.codepage = -1;
+  }
+  
+  resource_directory_id = RSRC_STRING_NAME_DIR_ID(id);
+  offset = RSRC_STRING_DATA_OFFSET(id);
+  
+  name_dir = pcr_get_rsrc_string_node_by_id(pf, resource_directory_id);
+  
+  if (name_dir)
+  {
+    lang_dir = pcr_get_sub_id_node(name_dir, language_id);
+    
+    if (lang_dir != NULL && lang_dir->resource_data != NULL)
+    {
+      rsptr.codepage = lang_dir->resource_data->data_entry.codepage;
+      
+      if (offset < lang_dir->resource_data->number_of_strings &&
+          strlen(lang_dir->resource_data->strings[offset]) > 0)
+        rsptr.sptr = &lang_dir->resource_data->strings[offset];
+    }
+  }
+  
+  pf->rsrc_section_data->rsrc_string_cache = rsptr;
+  
+  return rsptr;
 }
 
 /**
  * 
  */
-pcr_string pcr_get_string(const struct pcr_file *file, uint32_t id, int32_t culture_id)
+int pcr_get_string(const struct pcr_file *pf, uint32_t id, char *dest, size_t n)
 {
-  pcr_string string;
-  uint32_t resource_directory_id, offset, string_size;
-  struct resource_tree_node *name_dir = NULL, *lang_dir = NULL;
-  pcr_error_code err = PCR_ERROR_NONE;
+  const struct pcr_language *lang = pcr_get_default_language(pf);
   
-  string.codepage = 0;
-  string.value = NULL;
-  string.size = 0;
+  if (lang == NULL)
+    return PCR_RET_ERR_LANG_NOT_SET;
+  else
+    return pcr_get_stringL(pf, id, lang->id, dest, n);
+}
+
+/**
+ * 
+ */
+int pcr_get_stringL(const struct pcr_file *pf, uint32_t id, uint32_t language_id, char *dest, size_t n)
+{
+  struct rsrc_string_ptr sptr;
   
-  // calc ids
-  resource_directory_id = id/MAX_STRINGS_PER_LEAF + 1;
-  offset = id - (resource_directory_id-1) * MAX_STRINGS_PER_LEAF;
+  const struct language_info_array *linfo = pcr_get_language_info(pf);
+  struct pcr_language *lang = NULL;
+  uint32_t i, lang_cnt = 0;
   
-  name_dir = pcr_get_rsrc_string_node_by_id(file, resource_directory_id);
+  const struct pcr_language *default_lang = pcr_get_default_language(pf);
   
-  if (name_dir)
+  sptr = pcr_get_string_ptr(pf, id, language_id);
+  
+  if (default_lang != NULL && default_lang->id == language_id)
   {
-    if (culture_id == -1)
+      if (sptr.codepage != (uint32_t)-1 && sptr.codepage != default_lang->codepage)
+        lang_cnt = 2; // codepage not unique
+  }
+  else
+  {
+    for (i=0; i < linfo->count; i++)
     {
-      if (name_dir->directory_table.number_of_id_entries > 0)
-        lang_dir = name_dir->id_entries[0];
-    }
-    else
-      lang_dir = pcr_get_sub_id_node(name_dir, culture_id);
-    
-    if (lang_dir != NULL && lang_dir->resource_data != NULL &&
-        offset < lang_dir->resource_data->number_of_strings)
-    {
-      string_size = strlen(lang_dir->resource_data->strings[offset]) + 1;
-     
-      if (string_size > 1)
+      if (language_id == linfo->array[i].lang.id)
       {
-        string.value = (char *)pcr_malloc(string_size * sizeof(char), &err);
-        strncpy(string.value, lang_dir->resource_data->strings[offset], string_size);
-      
-        string.size = string_size;
-        string.codepage = lang_dir->resource_data->data_entry.codepage;
-      
-        printf("Debug: Found String: \"%s\"\n len: %d, rva: %d, offset: %d, language id: %d, codepage: %d\n",string.value, string.size, lang_dir->resource_data->data_entry.data_rva, 
-            offset, lang_dir->id, lang_dir->resource_data->data_entry.codepage);
+        lang_cnt ++;
+        
+        if (lang == NULL)
+          lang = &linfo->array[i].lang;
       }
     }
   }
   
-  if (string.value == NULL)
-    printf("Debug: String not found! Id: %d, culture_id: %d\n", id, culture_id);
   
-  return string;
+  if (sptr.sptr != NULL)
+    strncpy (dest, *sptr.sptr, n);
+  else
+    strncpy (dest, "\0", n); 
+    
+  return (lang_cnt > 1) ? 1 : 0;
+  
 }
 
 /**
- * TODO
+ * TODO error handling, BAD_ALLOC
  */
-pcr_error_code pcr_set_string(struct pcr_file *file, uint32_t id, uint32_t culture_id, const pcr_string pstr)
+int pcr_set_stringC(struct pcr_file *pf, uint32_t id, struct pcr_language lang, const char *src)
 {
   pcr_error_code err = PCR_ERROR_NONE;
-  uint32_t i;
   
-  struct resource_tree_node *string_dir = NULL, *name_dir = NULL, *lang_dir = NULL;
-  struct resource_data *resource_data = NULL;
+  struct resource_tree_node *type_node, *name_node, *lang_node;
+  struct resource_data *resource_data;
   
-  uint32_t resource_directory_id, offset;
+  uint32_t name_node_id, offset;
   
-  resource_directory_id = id/MAX_STRINGS_PER_LEAF + 1;   //TODO: move to a function
-  offset = id - (resource_directory_id-1) * MAX_STRINGS_PER_LEAF;
-  
-  if (file->rsrc_section_data == NULL)
+  if (!pf->rsrc_section_data)
   {
     printf("ERROR: There is no resource section data!\n");
     return PCR_ERROR_UNSUPPORTED;
   }
   
-  string_dir = pcr_get_sub_id_node(file->rsrc_section_data->root_node, RESOURCE_TYPE_STRINGS);
+  name_node_id = RSRC_STRING_NAME_DIR_ID(id);
+  offset = RSRC_STRING_DATA_OFFSET(id);
   
-  if (string_dir == NULL)
+  type_node = pcr_get_sub_id_node(pf->rsrc_section_data->root_node, RESOURCE_TYPE_STRINGS);
+  
+  if (!type_node) // add rsrc_type node
+    type_node = pcr_create_rsrc_id_node_at(pf->rsrc_section_data->root_node, RESOURCE_TYPE_STRINGS, &err);
+  
+  name_node = pcr_get_sub_id_node(type_node, name_node_id);
+  
+  if (!name_node) // add name node
+    name_node = pcr_create_rsrc_id_node_at(type_node, name_node_id, &err);
+  
+  lang_node = pcr_get_sub_id_node(name_node, lang.id);
+  
+  if (!lang_node) // add lang node
+    lang_node = pcr_create_rsrc_id_node_at(name_node, lang.id, &err);
+  
+  resource_data = lang_node->resource_data;
+  
+  if (!resource_data)
   {
-    printf("ERROR: There is no string type node!\n");
-    return PCR_ERROR_UNSUPPORTED;
+    resource_data = pcr_create_rsrc_data(lang, &err);
+    lang_node->resource_data = resource_data;
+    
+    pcr_update_language_info(&pf->rsrc_section_data->language_info, lang.id, lang.codepage, &err);
+  }
+  else 
+  {
+    if (resource_data->data_entry.codepage != lang.codepage)
+      return -1;
   }
   
-  name_dir = pcr_get_sub_id_node(string_dir, resource_directory_id);
-  
-  if (name_dir == NULL) // create a new name node
-  {
-    printf("Debug: Trying to create a name node with id: %d\n", resource_directory_id);
+  // Extend string array, offset is < MAX_STRINGS_PER_LEAF (modulo)
+  if (err != PCR_ERROR_NONE && offset >= resource_data->number_of_strings) 
+  { //TODO test this!
+    uint16_t new_number_of_strings = offset + 1;
+    uint16_t i;
     
-    name_dir = (struct resource_tree_node *)pcr_malloc(sizeof(struct resource_tree_node), &err);
+    resource_data->strings = (char **)pcr_realloc(resource_data->strings, 
+                                                  sizeof(char *) * new_number_of_strings, &err);
     
-    name_dir->id = resource_directory_id;
-    
-    pcr_init_directory_table(&name_dir->directory_table);
-    
-    // TODO repeating code
-    // ignore directory_entry, because it is only important at read/write
-    name_dir->id_entries = NULL;
-    name_dir->name_entries = NULL;
-    name_dir->name = NULL;
-    name_dir->resource_data = NULL;
-    
-    pcr_add_rsrc_node(string_dir, name_dir);
-  }
-  
-  lang_dir = pcr_get_sub_id_node(name_dir, culture_id);
-  
-  if (lang_dir == NULL) // create a new language node
-  {
-    printf("Debug: Trying to create a language node with id: %d\n", culture_id);
-    
-    lang_dir = (struct resource_tree_node *)pcr_malloc(sizeof(struct resource_tree_node), &err);
-    
-    lang_dir->id = culture_id;
-    
-    pcr_init_directory_table(&lang_dir->directory_table);
-    
-    // ignore directory_entry, because it is only important at read/write
-    lang_dir->id_entries = NULL;
-    lang_dir->name_entries = NULL;
-    lang_dir->name = NULL;
-    lang_dir->resource_data = NULL;
-    
-    pcr_add_rsrc_node(name_dir, lang_dir);
-  }
-  
-  resource_data = lang_dir->resource_data;
-  
-  if (resource_data == NULL)
-  {
-    printf("Debug: Trying to create resource data\n");
-    
-    resource_data = (struct resource_data *)pcr_malloc(sizeof(struct resource_data), &err);
-    
-    resource_data->type = RESOURCE_TYPE_STRINGS;
-    resource_data->raw_data = NULL;
-    
-    resource_data->data_entry.codepage = pstr.codepage;
-    resource_data->data_entry.data_rva = 0; 
-    resource_data->data_entry.reserved = 0;
-    resource_data->data_entry.size = MAX_STRINGS_PER_LEAF * 2; // sizeof(strings[i].size) * string count
-  
-    // create empty strings until offset is reached
-    resource_data->strings = (char **)pcr_malloc(sizeof(char *) * MAX_STRINGS_PER_LEAF, &err);
-    
-    for (i=0; i<MAX_STRINGS_PER_LEAF; i++)
+    for (i=resource_data->number_of_strings; i<new_number_of_strings; i++)
     {
       resource_data->strings[i] = (char *)pcr_malloc(sizeof(char), &err);
       resource_data->strings[i][0] = '\0';
     }
-    
-    resource_data->number_of_strings = MAX_STRINGS_PER_LEAF;
-    
-    lang_dir->resource_data = resource_data;
   }
   
-  if (offset >= resource_data->number_of_strings)
+  char **dest_str = NULL;
+  uint32_t src_len;
+  int32_t len_diff;
+  
+  dest_str = &lang_node->resource_data->strings[offset];
+  
+  src_len = strlen(src);
+  len_diff = src_len - strlen(*dest_str);
+  
+  if (src_len == 0)
   {
-    printf("ERROR: offset  >= resource_data->number_of_strings)!!!\n");
-    return PCR_ERROR_UNSUPPORTED;
-  }
+    free(*dest_str);
     
-  
-  // TODO refactor
-  char *r_str = NULL;
-  
-  r_str = lang_dir->resource_data->strings[offset];
-  
-  
-  uint32_t len = pstr.size;
-  int32_t len_diff = len - strlen(r_str);
-  
-  if (len == 0)
-  {
-    free(r_str);
-    
-    r_str = (char *)pcr_malloc(1, &err);
-    r_str[0] = '\0';
+    *dest_str = (char *)pcr_malloc(sizeof(char), &err);
+    *dest_str[0] = '\0';
   }
   else
   {
-    if (r_str == NULL)
-      r_str = (char *)pcr_malloc(len + 1, &err);
-    else
-      r_str = (char *)pcr_realloc(r_str, len + 1, &err); //TODO error!!
+    *dest_str = (char *)pcr_realloc(*dest_str, src_len + 1, &err); //TODO err check
       
-    strcpy(r_str, pstr.value);
+    strcpy(*dest_str, src);
   }
   
-  lang_dir->resource_data->data_entry.size += (len_diff*2); // *2 word alignmend
+  lang_node->resource_data->data_entry.size += (len_diff*2); // *2 word alignmend
+  
   
   return err;
 }

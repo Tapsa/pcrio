@@ -44,22 +44,18 @@
 
 #define DATA_DIRECTORY_COUNT 16
 
-enum Data_directory_id
-{
+enum data_directory_id {
   DATA_DIRECTORY_ID_RESOURCE = 2
 };
 
 // IDs of the Type nodes after the root node in the rsrc section
-enum Resource_type
-{
+enum resource_type {
   RESOURCE_TYPE_UNKNOWN = 0, // temporary type for root node, or unsupported
   RESOURCE_TYPE_STRINGS = 6,
   RESOURCE_TYPE_VERSION = 16
 };
 
-class Image_dos_header
-{  // DOS .EXE header
-public:
+struct image_dos_header {  // DOS .EXE header
   uint16_t e_magic;         // Magic number
   uint16_t e_cblp;          // Bytes on last page of file
   uint16_t e_cp;            // Pages in file
@@ -81,9 +77,7 @@ public:
   uint32_t e_lfanew;        // File address of new exe header
 };
 
-class Image_file_header
-{
-public:
+struct image_file_header {
   uint16_t machine;
   uint16_t number_of_sections;
   uint32_t time_stamp;
@@ -93,16 +87,12 @@ public:
   uint16_t charactersitics;
 };
 
-class Image_data_directory
-{
-public:
+struct image_data_directory {
   uint32_t rva;
   uint32_t size;
 };
 
-class Image_optional_header32
-{
-public:
+struct image_optional_header32 {
   uint16_t magic;
   unsigned char major_linker_version;
   unsigned char minor_linker_version;
@@ -133,12 +123,10 @@ public:
   uint32_t size_of_heap_commit;
   uint32_t loader_flags;
   uint32_t number_of_rva_and_sizes;
-  Image_data_directory data_directory[DATA_DIRECTORY_COUNT];
+  struct image_data_directory data_directory[DATA_DIRECTORY_COUNT];
 };
 
-class Image_section_header
-{
-public:
+struct image_section_header {
   char name[8]; // needs extra treatment for names > 8 characters (see doc)
   uint32_t virtual_size;
   uint32_t virtual_adress;
@@ -151,9 +139,7 @@ public:
   uint32_t characteristics;
 };
 
-class Resource_data_entry
-{
-public:
+struct resource_data_entry {
   uint32_t data_rva; // Only important on read and will be overwritten on write
   uint32_t size;
   uint32_t codepage;
@@ -161,10 +147,9 @@ public:
 
 };
 
-class Resource_data
-{
-public:
-  enum Resource_type type; // if RESOURCE_TYPE_STRINGS: strings are set
+struct resource_data {
+
+  enum resource_type type; // if RESOURCE_TYPE_STRINGS: strings are set
                       // else data is filled
 
   char *raw_data;
@@ -172,19 +157,15 @@ public:
   uint16_t number_of_strings;
   char **strings;
 
-  Resource_data_entry data_entry;
+  struct resource_data_entry data_entry;
 };
 
-class Resource_directory_entry
-{
-public:
+struct resource_directory_entry {
   uint32_t id; //or name rva
   uint32_t rva; // if high bit: subdirectory_entry rva else: data_entry rva
 };
 
-class Resource_directory_table
-{
-public:
+struct resource_directory_table {
   uint32_t characteristics;
   uint32_t time_stamp;
   uint16_t major_version;
@@ -194,16 +175,15 @@ public:
 };
 
 // tree in memory:
-class Resource_tree_node
-{
-public:
+struct resource_tree_node {
+
   // if there is leaf data, directory table values are set to 0 and must not
   // be changed
-  Resource_directory_table directory_table;
+  struct resource_directory_table directory_table;
 
   // Do not touch! Only important on read and will automatically be set on
   // write.
-  Resource_directory_entry directory_entry;
+  struct resource_directory_entry directory_entry;
 
   // contains
   // either ( if name == NULL)
@@ -213,38 +193,30 @@ public:
 
   // contains
   // either subnodes
-  Resource_tree_node **name_entries;
-  Resource_tree_node **id_entries;
+  struct resource_tree_node **name_entries;
+  struct resource_tree_node **id_entries;
 
   // or leaf data
-  Resource_data *resource_data;
+  struct resource_data *resource_data;
 
 };
 
-class Pcr_language
-{
-public:
+struct pcr_language {
   uint32_t id;
   uint32_t codepage;
 };
 
-class Language_info
-{
-public:
-  Pcr_language lang;
+struct language_info {
+  struct pcr_language lang;
   uint32_t item_count;
 };
 
-class Language_info_array
-{
-public:
-  Language_info *array;
+struct language_info_array {
+  struct language_info *array;
   uint32_t count;
 };
 
-class Rsrc_string_ptr
-{
-public:
+struct rsrc_string_ptr {
   char **sptr;
 
   uint32_t id;
@@ -253,40 +225,36 @@ public:
 };
 
 /**
- * This class stores nodes containing the resource data. Windows uses three
+ * This struct stores nodes containing the resource data. Windows uses three
  * levels to store the data.
  *
- * 1. Type      // Type of the data. E.g. Strings, Version info (see enum Resource_type)
+ * 1. Type      // Type of the data. E.g. Strings, Version info (see enum resource_type)
  * 2. Name
  * 3. Language  // id of the language
  *
  */
-class Resource_section_data
-{
-public:
-  Resource_tree_node *root_node;
+struct resource_section_data {
+  struct resource_tree_node *root_node;
 
-  Language_info_array Language_info;
-  Pcr_language *default_language;
+  struct language_info_array language_info;
+  struct pcr_language *default_language;
 
   // simple string cache, will improve access time if for e.g. 1. get_strlen, 2. get_string
-  Rsrc_string_ptr rsrc_string_cache;
+  struct rsrc_string_ptr rsrc_string_cache;
 };
 
-class Pcr_file
-{
-public:
-  Image_dos_header dos_header;
+struct pcr_file {
+  struct image_dos_header dos_header;
 
   char *rm_stub; // MS-DOS Real-Mode Stub Program
 
   char signature[4];
 
-  Image_file_header image_file_header;
-  Image_optional_header32 *image_optional_header32;
-  Image_section_header *section_table;
+  struct image_file_header image_file_header;
+  struct image_optional_header32 *image_optional_header32;
+  struct image_section_header *section_table;
 
-  Resource_section_data *rsrc_section_data;
+  struct resource_section_data *rsrc_section_data;
 
   // other section data
   char **section_data;
