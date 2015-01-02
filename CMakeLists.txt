@@ -7,8 +7,7 @@ project(pecoffresourcelib)
 
 add_definitions(-Wall -Wsign-compare)
 
-#add_executable(pecoffresourcelib main.c pcrio.cpp)
-#add_executable(debug_info debug_info.c pcrio.cpp)
+#add_executable(pecoffresourcelib main.c pcrio.c)
+#add_executable(debug_info debug_info.c pcrio.c)
 
 add_subdirectory(tests)
-
