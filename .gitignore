@@ -8,6 +8,8 @@
 
 # build subdirectory
 build/
+debug/
+release/
 
 # generated files by doxygen
 doc/
