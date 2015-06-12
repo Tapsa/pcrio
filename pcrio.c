@@ -82,9 +82,6 @@ struct rsrc_section_size {
 //TODO: documentation
 //TODO: cleanup source err (variable name, coding style)
 
-int main(int argc, char **argv)
-{
-}
 
 /* 
  * misc utils
