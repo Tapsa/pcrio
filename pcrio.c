@@ -741,7 +741,7 @@ struct resource_data *pcr_read_rsrc_data(FILE *file, enum pcr_error *err_code,
       
       uint32_t area_start_pos = ftell(file);
       
-      while (ftell(file) < (area_start_pos + size))
+      while (uint32_t(ftell(file)) < (area_start_pos + size))
       {
         re_strings = (char **)pcr_realloc(strings, sizeof(char *) * (string_count+1), err_code); 
           
