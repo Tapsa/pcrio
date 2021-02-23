@@ -385,17 +385,18 @@ int pcr_comp_language_info_without_cp (const void *a, const void *b)
  */
 struct pcr_file *pcr_read_file(const char *filename, pcr_error_code *err)
 {
-  FILE *file = NULL;
-  struct pcr_file *pfile = NULL;
-  unsigned int rm_stub_size;
-
   if (PCR_FAILURE(*err))
     return NULL;
 
-  errno_t success = fopen_s(&file, filename, "rb");
+  FILE* file = NULL;
+  struct pcr_file* pfile = NULL;
+
+  fopen_s(&file, filename, "rb");
 
   if (file == NULL)
+  {
     *err = PCR_ERROR_READ;
+  }
   else
   {
     pfile = (struct pcr_file *) pcr_malloc(sizeof(struct pcr_file), err);
@@ -408,7 +409,7 @@ struct pcr_file *pcr_read_file(const char *filename, pcr_error_code *err)
 
     pcr_fread(&pfile->dos_header, sizeof(struct image_dos_header), 1, file, err);
 
-    rm_stub_size = pfile->dos_header.e_lfanew - sizeof(struct image_dos_header);
+    unsigned int rm_stub_size = pfile->dos_header.e_lfanew - sizeof(struct image_dos_header);
     pfile->rm_stub = (char *)pcr_malloc(rm_stub_size, err);
 
     pcr_fread(pfile->rm_stub, rm_stub_size, 1, file, err);
@@ -1023,10 +1024,12 @@ void pcr_write_file(const char *filename, struct pcr_file *pfile, pcr_error_code
   if (pfile == NULL || PCR_FAILURE(*err))
     return;
 
-  errno_t success = fopen_s(&stream, filename, "wb");
+  fopen_s(&stream, filename, "wb");
 
   if (stream == NULL)
+  {
     *err = PCR_ERROR_WRITE;
+  }
   else
   {
     struct rsrc_section_size rs_size;
@@ -1533,7 +1536,7 @@ struct resource_tree_node* pcr_get_sub_name_node(const struct resource_tree_node
     size_t sizeInBytes = strlen(name);
     key.name = (char *)pcr_malloc(sizeInBytes, &err);
 
-    errno_t success = strcpy_s(key.name, sizeInBytes, name);
+    strcpy_s(key.name, sizeInBytes, name);
     kptr = &key;
 
     result = (struct resource_tree_node **)bsearch(&kptr, node->name_entries, node->directory_table.number_of_name_entries,
@@ -1631,6 +1634,7 @@ const struct pcr_language *pcr_get_default_language(const struct pcr_file *pfile
  */
 void pcr_set_default_language(struct pcr_file* pf, uint32_t language_id)
 {
+  pf; language_id;
   //TODO implement
 }
 
@@ -1639,6 +1643,7 @@ void pcr_set_default_language(struct pcr_file* pf, uint32_t language_id)
  */
 void pcr_set_default_languageL(struct pcr_file *pf, struct pcr_language lang)
 {
+  pf; lang;
   //TODO implement
 }
 
@@ -1666,7 +1671,7 @@ uint32_t pcr_get_codepageL(const struct pcr_file *pf, uint32_t string_id, uint32
     return rsptr.codepage;
 
   if (pcr_get_language_count(pf, language_id) > 1) // language not unique
-    return -1;
+    return (uint32_t)-1;
 
   // get language from info array
   const struct pcr_language *langptr = pcr_get_language(pf, language_id);
@@ -1723,7 +1728,7 @@ struct rsrc_string_ptr pcr_get_string_ptr (const struct pcr_file *pf, uint32_t i
     rsptr.sptr = NULL;
     rsptr.id = id;
     rsptr.language_id = language_id;
-    rsptr.codepage = -1;
+    rsptr.codepage = (uint32_t)-1;
   }
 
   resource_directory_id = RSRC_STRING_NAME_DIR_ID(id);
@@ -1862,13 +1867,12 @@ int pcr_set_stringC(struct pcr_file *pf, uint32_t id, struct pcr_language lang, 
   // Extend string array, offset is < MAX_STRINGS_PER_LEAF (modulo)
   if (err != PCR_ERROR_NONE && offset >= resource_data->number_of_strings)
   { //TODO test this!
-    uint16_t new_number_of_strings = offset + 1;
-    uint16_t i;
+    uint32_t new_number_of_strings = offset + 1;
 
     resource_data->strings = (char **)pcr_realloc(resource_data->strings,
                                                   sizeof(char *) * new_number_of_strings, &err);
 
-    for (i=resource_data->number_of_strings; i<new_number_of_strings; i++)
+    for (uint32_t i=resource_data->number_of_strings; i<new_number_of_strings; i++)
     {
       resource_data->strings[i] = (char *)pcr_malloc(sizeof(char), &err);
       resource_data->strings[i][0] = '\0';
