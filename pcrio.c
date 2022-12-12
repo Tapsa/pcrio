@@ -1,6 +1,6 @@
 /*
     Copyright (c) 2012, Armin Preiml
-    Copyright (c) 2021, Mikko P
+    Copyright (c) 2021 - 2022, Mikko Tapio P
 
     All rights reserved.
 
@@ -61,13 +61,14 @@
 #define RSRC_STRING_NAME_DIR_ID(string_id) (string_id/MAX_STRINGS_PER_LEAF + 1);
 #define RSRC_STRING_DATA_OFFSET(string_id) string_id % MAX_STRINGS_PER_LEAF
 
-enum rsrc_node_identifier {
+enum rsrc_node_identifier
+{
   TREE_NODE_IDENTIFIER_ID = 0,
   TREE_NODE_IDENTIFIER_NAME = 1
-
 };
 
-struct rsrc_section_size {
+struct rsrc_section_size
+{
   uint32_t s_tree;
   uint32_t s_data_description;
   uint32_t s_directory_strings;
@@ -874,7 +875,7 @@ void pcr_prepare_rsrc_node(struct resource_tree_node *node, enum pcr_error *err_
   {
     node->directory_entry.id = size->s_directory_strings;
 
-    size->s_directory_strings += strlen(node->name) * 2 + sizeof(uint16_t);
+    size->s_directory_strings += (uint16_t)strlen(node->name) * 2 + sizeof(uint16_t);
   }
 
   if (node->resource_data == NULL) // node
@@ -907,7 +908,7 @@ void pcr_prepare_rsrc_node(struct resource_tree_node *node, enum pcr_error *err_
       uint32_t act_size = 0;
       for(i=0; i<node->resource_data->number_of_strings; i++)
       {
-        act_size += strlen(node->resource_data->strings[i]) *2;
+        act_size += (uint16_t)strlen(node->resource_data->strings[i]) * 2;
         act_size += 2;
       }
 
@@ -1524,34 +1525,6 @@ struct resource_tree_node* pcr_get_sub_id_node(const struct resource_tree_node *
 }
 
 /**
- * returns name node or NULL if unable to get it
- */
-struct resource_tree_node* pcr_get_sub_name_node(const struct resource_tree_node *node, const char *name)
-{
-  struct resource_tree_node key, *kptr, **result = NULL;
-  pcr_error_code err = PCR_ERROR_NONE;
-
-  if (node && node->directory_table.number_of_name_entries > 0)
-  {
-    size_t sizeInBytes = strlen(name);
-    key.name = (char *)pcr_malloc(sizeInBytes, &err);
-
-    strcpy_s(key.name, sizeInBytes, name);
-    kptr = &key;
-
-    result = (struct resource_tree_node **)bsearch(&kptr, node->name_entries, node->directory_table.number_of_name_entries,
-                  sizeof(struct resource_tree_node **), pcr_comp_name_tree_nodes);
-
-    free(key.name);
-  }
-
-  if (result == NULL)
-    return NULL;
-  else
-    return *result;
-}
-
-/**
  * Returns NULL if not found.
  */
 struct resource_tree_node *pcr_get_rsrc_string_node_by_id(const struct pcr_file *file, uint32_t id)
@@ -1802,12 +1775,10 @@ int pcr_get_stringL(const struct pcr_file *pf, uint32_t id, uint32_t language_id
     }
   }
 
-  size_t sizeInBytes = strlen(dest);
-
   if (sptr.sptr != NULL)
-    strncpy_s(dest, sizeInBytes, *sptr.sptr, n);
+    strncpy_s(dest, n, *sptr.sptr, n);
   else
-    strncpy_s(dest, sizeInBytes, "\0", n);
+    strncpy_s(dest, n, "\0", n);
 
   return (lang_cnt > 1) ? 1 : 0;
 
@@ -1880,13 +1851,13 @@ int pcr_set_stringC(struct pcr_file *pf, uint32_t id, struct pcr_language lang, 
   }
 
   char **dest_str = NULL;
-  uint32_t src_len;
+  uint16_t src_len;
   int32_t len_diff;
 
   dest_str = &lang_node->resource_data->strings[offset];
 
-  src_len = strlen(src);
-  len_diff = src_len - strlen(*dest_str);
+  src_len = (uint16_t)strlen(src);
+  len_diff = src_len - (uint16_t)strlen(*dest_str);
 
   if (src_len == 0)
   {
@@ -1902,7 +1873,7 @@ int pcr_set_stringC(struct pcr_file *pf, uint32_t id, struct pcr_language lang, 
     strcpy_s(*dest_str, src_len + 1, src);
   }
 
-  lang_node->resource_data->data_entry.size += (len_diff*2); // *2 word alignmend
+  lang_node->resource_data->data_entry.size += (len_diff * 2); // *2 word alignmend
 
   return err;
 }

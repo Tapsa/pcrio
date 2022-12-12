@@ -47,7 +47,8 @@
 
 #define PCR_RET_ERR_LANG_NOT_SET -2
 
-enum pcr_error {
+enum pcr_error
+{
   PCR_ERROR_NONE = 0,
   PCR_ERROR_BAD_ALLOC = 1,
   PCR_ERROR_READ = 2,
