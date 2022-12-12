@@ -44,18 +44,22 @@
 
 #define DATA_DIRECTORY_COUNT 16
 
-enum data_directory_id {
+enum data_directory_id
+{
   DATA_DIRECTORY_ID_RESOURCE = 2
 };
 
 // IDs of the Type nodes after the root node in the rsrc section
-enum resource_type {
+enum resource_type
+{
   RESOURCE_TYPE_UNKNOWN = 0, // temporary type for root node, or unsupported
   RESOURCE_TYPE_STRINGS = 6,
   RESOURCE_TYPE_VERSION = 16
 };
 
-struct image_dos_header {  // DOS .EXE header
+// DOS .EXE header
+struct image_dos_header
+{
   uint16_t e_magic;         // Magic number
   uint16_t e_cblp;          // Bytes on last page of file
   uint16_t e_cp;            // Pages in file
@@ -77,7 +81,8 @@ struct image_dos_header {  // DOS .EXE header
   uint32_t e_lfanew;        // File address of new exe header
 };
 
-struct image_file_header {
+struct image_file_header
+{
   uint16_t machine;
   uint16_t number_of_sections;
   uint32_t time_stamp;
@@ -87,12 +92,14 @@ struct image_file_header {
   uint16_t charactersitics;
 };
 
-struct image_data_directory {
+struct image_data_directory
+{
   uint32_t rva;
   uint32_t size;
 };
 
-struct image_optional_header32 {
+struct image_optional_header32
+{
   uint16_t magic;
   unsigned char major_linker_version;
   unsigned char minor_linker_version;
@@ -126,7 +133,8 @@ struct image_optional_header32 {
   struct image_data_directory data_directory[DATA_DIRECTORY_COUNT];
 };
 
-struct image_section_header {
+struct image_section_header
+{
   char name[8]; // needs extra treatment for names > 8 characters (see doc)
   uint32_t virtual_size;
   uint32_t virtual_adress;
@@ -139,7 +147,8 @@ struct image_section_header {
   uint32_t characteristics;
 };
 
-struct resource_data_entry {
+struct resource_data_entry
+{
   uint32_t data_rva; // Only important on read and will be overwritten on write
   uint32_t size;
   uint32_t codepage;
@@ -147,8 +156,8 @@ struct resource_data_entry {
 
 };
 
-struct resource_data {
-
+struct resource_data
+{
   enum resource_type type; // if RESOURCE_TYPE_STRINGS: strings are set
                       // else data is filled
 
@@ -160,12 +169,14 @@ struct resource_data {
   struct resource_data_entry data_entry;
 };
 
-struct resource_directory_entry {
+struct resource_directory_entry
+{
   uint32_t id; //or name rva
   uint32_t rva; // if high bit: subdirectory_entry rva else: data_entry rva
 };
 
-struct resource_directory_table {
+struct resource_directory_table
+{
   uint32_t characteristics;
   uint32_t time_stamp;
   uint16_t major_version;
@@ -175,8 +186,8 @@ struct resource_directory_table {
 };
 
 // tree in memory:
-struct resource_tree_node {
-
+struct resource_tree_node
+{
   // if there is leaf data, directory table values are set to 0 and must not
   // be changed
   struct resource_directory_table directory_table;
@@ -198,25 +209,28 @@ struct resource_tree_node {
 
   // or leaf data
   struct resource_data *resource_data;
-
 };
 
-struct pcr_language {
+struct pcr_language
+{
   uint32_t id;
   uint32_t codepage;
 };
 
-struct language_info {
+struct language_info
+{
   struct pcr_language lang;
   uint32_t item_count;
 };
 
-struct language_info_array {
+struct language_info_array
+{
   struct language_info *array;
   uint32_t count;
 };
 
-struct rsrc_string_ptr {
+struct rsrc_string_ptr
+{
   char **sptr;
 
   uint32_t id;
@@ -233,7 +247,8 @@ struct rsrc_string_ptr {
  * 3. Language  // id of the language
  *
  */
-struct resource_section_data {
+struct resource_section_data
+{
   struct resource_tree_node *root_node;
 
   struct language_info_array language_info;
@@ -243,7 +258,8 @@ struct resource_section_data {
   struct rsrc_string_ptr rsrc_string_cache;
 };
 
-struct pcr_file {
+struct pcr_file
+{
   struct image_dos_header dos_header;
 
   char *rm_stub; // MS-DOS Real-Mode Stub Program
